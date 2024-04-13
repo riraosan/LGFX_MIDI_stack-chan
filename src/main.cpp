@@ -5,6 +5,13 @@
 #include <M5StackUpdater.h>
 #include <M5Unified.h>
 
+#include "common.h"
+#include "IntervalCheck.h"
+#include "IntervalCheckMicros.h"
+#include "SmfSeq.h"
+#include "MidiPort.h"
+#include "SmfFileAccess.h"
+
 
 #if defined(ARDUINO_M5STACK_Core2)
   // M5Stack Core2用のサーボの設定
@@ -41,26 +48,26 @@
   // Port.A X:G1 Y:G2
   // Port.B X:G8 Y:G9
   // Port.C X:18 Y:17
-  #define SERVO_PIN_X 1 
-  #define SERVO_PIN_Y 2
-  #include <gob_unifiedButton.hpp> // 2023/5/12現在 M5UnifiedにBtnA等がないのでGobさんのライブラリを使用
+#define SERVO_PIN_X 1
+#define SERVO_PIN_Y 2
+#include <gob_unifiedButton.hpp> // 2023/5/12現在 M5UnifiedにBtnA等がないのでGobさんのライブラリを使用
   goblib::UnifiedButton unifiedButton;
-#elif defined( ARDUINO_M5STACK_DIAL )
-  // M5Stack Fireの場合はPort.A(X:G22, Y:G21)のみです。
-  // I2Cと同時利用は不可
-  #define SERVO_PIN_X 13
-  #define SERVO_PIN_Y 15
+#elif defined(ARDUINO_M5STACK_DIAL)
+// M5Stack Fireの場合はPort.A(X:G22, Y:G21)のみです。
+// I2Cと同時利用は不可
+#define SERVO_PIN_X 13
+#define SERVO_PIN_Y 15
 #endif
 
-int servo_offset_x = 0;  // X軸サーボのオフセット（90°からの+-で設定）
-int servo_offset_y = 0;  // Y軸サーボのオフセット（90°からの+-で設定）
+  int servo_offset_x = 0; // X軸サーボのオフセット（90°からの+-で設定）
+  int servo_offset_y = 0; // Y軸サーボのオフセット（90°からの+-で設定）
 
-#include <Avatar.h> // https://github.com/meganetaaan/m5stack-avatar
-#include <ServoEasing.hpp> // https://github.com/ArminJo/ServoEasing       
+#include <Avatar.h>         // https://github.com/meganetaaan/m5stack-avatar
+#include <ServoEasing.hpp>  // https://github.com/ArminJo/ServoEasing
 #include "formatString.hpp" // https://gist.github.com/GOB52/e158b689273569357b04736b78f050d6
 
-using namespace m5avatar;
-Avatar avatar;
+  using namespace m5avatar;
+  Avatar avatar;
 
 #define START_DEGREE_VALUE_X 90
 #define START_DEGREE_VALUE_Y 90
@@ -68,20 +75,22 @@ Avatar avatar;
 #define SDU_APP_PATH "/stackchan_tester.bin"
 #define TFCARD_CS_PIN 4
 
-ServoEasing servo_x;
-ServoEasing servo_y;
+  ServoEasing servo_x;
+  ServoEasing servo_y;
 
-uint32_t mouth_wait = 2000; // 通常時のセリフ入れ替え時間（msec）
-uint32_t last_mouth_millis = 0;
+  uint32_t mouth_wait = 2000; // 通常時のセリフ入れ替え時間（msec）
+  uint32_t last_mouth_millis = 0;
 
-const char* lyrics[] = { "BtnA:MoveTo90  ", "BtnB:ServoTest  ", "BtnC:RandomMode  ", "BtnALong:AdjustMode"};
-const int lyrics_size = sizeof(lyrics) / sizeof(char*);
-int lyrics_idx = 0;
+  const char *lyrics[] = {"BtnA:MoveTo90  ", "BtnB:ServoTest  ", "BtnC:RandomMode  ", "BtnALong:AdjustMode"};
+  const int lyrics_size = sizeof(lyrics) / sizeof(char *);
+  int lyrics_idx = 0;
 
-void moveX(int x, uint32_t millis_for_move = 0) {
-  if (millis_for_move == 0) {
-    servo_x.easeTo(x + servo_offset_x);
-  } else {
+  void moveX(int x, uint32_t millis_for_move = 0)
+  {
+    if (millis_for_move == 0)
+    {
+      servo_x.easeTo(x + servo_offset_x);
+    } else {
     servo_x.easeToD(x + servo_offset_x, millis_for_move);
   }
 }
@@ -214,10 +223,11 @@ void setup() {
 #else
   avatar.setBatteryIcon(true);
 #endif
-  if (servo_x.attach(SERVO_PIN_X, 
+  if (servo_x.attach(SERVO_PIN_X,
                      START_DEGREE_VALUE_X + servo_offset_x,
                      DEFAULT_MICROSECONDS_FOR_0_DEGREE,
-                     DEFAULT_MICROSECONDS_FOR_180_DEGREE)) {
+                     DEFAULT_MICROSECONDS_FOR_180_DEGREE))
+  {
     Serial.print("Error attaching servo x");
   }
   if (servo_y.attach(SERVO_PIN_Y,
@@ -245,7 +255,7 @@ void loop() {
   } else if (M5.BtnA.wasPressed()) {
     moveXY(90, 90);
   }
-  
+
   if (M5.BtnB.wasSingleClicked()) {
     testServo();
   } else if (M5.BtnB.wasDoubleClicked()) {
@@ -257,8 +267,8 @@ void loop() {
       avatar.setSpeechText("ExtOutput On");
     }
     delay(2000);
-    avatar.setSpeechText(""); 
-  } 
+    avatar.setSpeechText("");
+  }
   if (M5.BtnC.pressedFor(5000)) {
     M5_LOGI("Will copy this sketch to filesystem");
     if (saveSketchToFS( SD, SDU_APP_PATH, TFCARD_CS_PIN )) {
