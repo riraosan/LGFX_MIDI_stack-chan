@@ -1,57 +1,56 @@
- #include <Arduino.h>
-
-#include <SD.h>
-#include <Ticker.h>
+#include <Arduino.h>
 #include <M5StackUpdater.h>
 #include <M5Unified.h>
+#include <SD.h>
+#include <Ticker.h>
 
-#include "common.h"
 #include "IntervalCheck.h"
 #include "IntervalCheckMicros.h"
-#include "SmfSeq.h"
 #include "MidiPort.h"
 #include "SmfFileAccess.h"
+#include "SmfSeq.h"
+#include "common.h"
 
+SMF_SEQ_TABLE *pseqTbl;  // SMFシーケンサハンドル
 
 #if defined(ARDUINO_M5STACK_Core2)
-  // M5Stack Core2用のサーボの設定
-  // Port.A X:G33, Y:G32
-  // Port.C X:G13, Y:G14
-  // スタックチャン基板 X:G19, Y:G27
-  #define SERVO_PIN_X 33
-  #define SERVO_PIN_Y 32
-#elif defined( ARDUINO_M5STACK_FIRE )
-  // M5Stack Fireの場合はPort.A(X:G22, Y:G21)のみです。
-  // I2Cと同時利用は不可
-  #define SERVO_PIN_X 22
-  #define SERVO_PIN_Y 21
+// M5Stack Core2用のサーボの設定
+// Port.A X:G33, Y:G32
+// Port.C X:G13, Y:G14
+// スタックチャン基板 X:G19, Y:G27
+#define SERVO_PIN_X 33
+#define SERVO_PIN_Y 32
+#elif defined(ARDUINO_M5STACK_FIRE)
+// M5Stack Fireの場合はPort.A(X:G22, Y:G21)のみです。
+// I2Cと同時利用は不可
+#define SERVO_PIN_X 22
+#define SERVO_PIN_Y 21
 #if SERVO_PIN_X == 22
-  // FireでPort.Aを使う場合は内部I2CをOffにする必要がある。
-  #define CORE_PORT_A
+// FireでPort.Aを使う場合は内部I2CをOffにする必要がある。
+#define CORE_PORT_A
 #endif
 
-#elif defined( ARDUINO_M5Stack_Core_ESP32 )
-  // M5Stack Basic/Gray/Go用の設定
-  // Port.A X:G22, Y:G21
-  // Port.C X:G16, Y:G17
-  // スタックチャン基板 X:G5, Y:G2
-  #define SERVO_PIN_X 22
-  #define SERVO_PIN_Y 21
+#elif defined(ARDUINO_M5Stack_Core_ESP32)
+// M5Stack Basic/Gray/Go用の設定
+// Port.A X:G22, Y:G21
+// Port.C X:G16, Y:G17
+// スタックチャン基板 X:G5, Y:G2
+#define SERVO_PIN_X 22
+#define SERVO_PIN_Y 21
 
 #if SERVO_PIN_X == 22
-  // CoreでPort.Aを使う場合は内部I2CをOffにする必要がある。
-  #define CORE_PORT_A
+// CoreでPort.Aを使う場合は内部I2CをOffにする必要がある。
+#define CORE_PORT_A
 #endif
 
-#elif defined( ARDUINO_M5STACK_CORES3 )
-  // M5Stack CoreS3用の設定 ※暫定的にplatformio.iniにARDUINO_M5STACK_CORES3を定義しています。
-  // Port.A X:G1 Y:G2
-  // Port.B X:G8 Y:G9
-  // Port.C X:18 Y:17
+#elif defined(ARDUINO_M5STACK_CORES3)
+// M5Stack CoreS3用の設定
+// ※暫定的にplatformio.iniにARDUINO_M5STACK_CORES3を定義しています。 Port.A X:G1
+// Y:G2 Port.B X:G8 Y:G9 Port.C X:18 Y:17
 #define SERVO_PIN_X 1
 #define SERVO_PIN_Y 2
-#include <gob_unifiedButton.hpp> // 2023/5/12現在 M5UnifiedにBtnA等がないのでGobさんのライブラリを使用
-  goblib::UnifiedButton unifiedButton;
+#include <gob_unifiedButton.hpp>  // 2023/5/12現在 M5UnifiedにBtnA等がないのでGobさんのライブラリを使用
+goblib::UnifiedButton unifiedButton;
 #elif defined(ARDUINO_M5STACK_DIAL)
 // M5Stack Fireの場合はPort.A(X:G22, Y:G21)のみです。
 // I2Cと同時利用は不可
@@ -59,15 +58,17 @@
 #define SERVO_PIN_Y 15
 #endif
 
-  int servo_offset_x = 0; // X軸サーボのオフセット（90°からの+-で設定）
-  int servo_offset_y = 0; // Y軸サーボのオフセット（90°からの+-で設定）
+int servo_offset_x = 0;  // X軸サーボのオフセット（90°からの+-で設定）
+int servo_offset_y = 0;  // Y軸サーボのオフセット（90°からの+-で設定）
 
-#include <Avatar.h>         // https://github.com/meganetaaan/m5stack-avatar
+#include <Avatar.h>  // https://github.com/meganetaaan/m5stack-avatar
+
 #include <ServoEasing.hpp>  // https://github.com/ArminJo/ServoEasing
-#include "formatString.hpp" // https://gist.github.com/GOB52/e158b689273569357b04736b78f050d6
 
-  using namespace m5avatar;
-  Avatar avatar;
+#include "formatString.hpp"  // https://gist.github.com/GOB52/e158b689273569357b04736b78f050d6
+
+using namespace m5avatar;
+Avatar avatar;
 
 #define START_DEGREE_VALUE_X 90
 #define START_DEGREE_VALUE_Y 90
@@ -75,22 +76,21 @@
 #define SDU_APP_PATH "/stackchan_tester.bin"
 #define TFCARD_CS_PIN 4
 
-  ServoEasing servo_x;
-  ServoEasing servo_y;
+ServoEasing servo_x;
+ServoEasing servo_y;
 
-  uint32_t mouth_wait = 2000; // 通常時のセリフ入れ替え時間（msec）
-  uint32_t last_mouth_millis = 0;
+uint32_t mouth_wait = 2000;  // 通常時のセリフ入れ替え時間（msec）
+uint32_t last_mouth_millis = 0;
 
-  const char *lyrics[] = {"BtnA:MoveTo90  ", "BtnB:ServoTest  ", "BtnC:RandomMode  ", "BtnALong:AdjustMode"};
-  const int lyrics_size = sizeof(lyrics) / sizeof(char *);
-  int lyrics_idx = 0;
+const char *lyrics[] = {"BtnA:MoveTo90  ", "BtnB:ServoTest  ",
+                        "BtnC:RandomMode  ", "BtnALong:AdjustMode"};
+const int lyrics_size = sizeof(lyrics) / sizeof(char *);
+int lyrics_idx = 0;
 
-  void moveX(int x, uint32_t millis_for_move = 0)
-  {
-    if (millis_for_move == 0)
-    {
-      servo_x.easeTo(x + servo_offset_x);
-    } else {
+void moveX(int x, uint32_t millis_for_move = 0) {
+  if (millis_for_move == 0) {
+    servo_x.easeTo(x + servo_offset_x);
+  } else {
     servo_x.easeToD(x + servo_offset_x, millis_for_move);
   }
 }
@@ -123,7 +123,7 @@ void adjustOffset() {
   bool adjustX = true;
   for (;;) {
 #ifdef ARDUINO_M5STACK_CORES3
-    unifiedButton.update(); // M5.update() よりも前に呼ぶ事
+    unifiedButton.update();  // M5.update() よりも前に呼ぶ事
 #endif
     M5.update();
     if (M5.BtnA.wasPressed()) {
@@ -160,7 +160,6 @@ void adjustOffset() {
       s = formatString("%s:%d:BtnB:X/Y", "Y", servo_offset_y);
     }
     avatar.setSpeechText(s.c_str());
-
   }
 }
 
@@ -170,7 +169,7 @@ void moveRandom() {
     int x = random(45, 135);  // 45〜135° でランダム
     int y = random(60, 90);   // 50〜90° でランダム
 #ifdef ARDUINO_M5STACK_CORES3
-    unifiedButton.update(); // M5.update() よりも前に呼ぶ事
+    unifiedButton.update();  // M5.update() よりも前に呼ぶ事
 #endif
     M5.update();
     if (M5.BtnC.wasPressed()) {
@@ -179,16 +178,17 @@ void moveRandom() {
     int delay_time = random(10);
     moveXY(x, y, 1000 + 100 * delay_time);
     delay(2000 + 500 * delay_time);
-#if !defined( CORE_PORT_A )
+#if !defined(CORE_PORT_A)
     // Basic/M5Stack Fireの場合はバッテリー情報が取得できないので表示しない
     avatar.setBatteryStatus(M5.Power.isCharging(), M5.Power.getBatteryLevel());
 #endif
-    //avatar.setSpeechText("Stop BtnC");
+    // avatar.setSpeechText("Stop BtnC");
     avatar.setSpeechText("");
   }
 }
+
 void testServo() {
-  for (int i=0; i<2; i++) {
+  for (int i = 0; i < 2; i++) {
     avatar.setSpeechText("X 90 -> 0  ");
     moveX(0);
     avatar.setSpeechText("X 0 -> 180  ");
@@ -202,36 +202,319 @@ void testServo() {
   }
 }
 
+//----------------------------------------------------------------------
+// MIDIポートアクセス関数定義
+// MidiFunc.c/hから呼び出されるMIDI I/Fアクセス関数の実体を記述する。
+// 以下ではハードウェアシリアルを使用した場合の例を記述。
+#include "MidiPort.h"
+int MidiPort_open() {
+  Serial2.begin(D_MIDI_PORT_BPS);
+  return (0);
+}
+
+void MidiPort_close() { Serial2.end(); }
+int MidiPort_write(UCHAR data) {
+#ifdef DUMPMIDI
+  DPRINT("1:");
+  int n = (int)data;
+  DPRINTLN(n, HEX);
+#else
+  Serial2.write(data);
+#endif
+  return (1);
+}
+
+int MidiPort_writeBuffer(UCHAR *pData, ULONG Len) {
+#ifdef DUMPMIDI
+  int n;
+  int i;
+  DPRINT.print(Len);
+  DPRINT.print(":");
+  for (i = 0; i < Len; i++) {
+    n = (int)pData[i];
+    DPRINT.print(n, HEX);
+  }
+  DPRINTLN.println("");
+#else
+  Serial2.write(pData, Len);
+#endif
+  return (Len);
+}
+//----------------------------------------------------------------------
+// SMFファイルアクセス関数定義
+// SmfSeq.c/hから呼び出されるSMFファイルへのアクセス関数の実体を記述する。
+// 以下ではSDカードシールドライブラリに対し、ファイルポインタで直接読み出し位置を指定する方法での例を記述。
+// ライブラリ自体の初期化はsetup関数に記述している。
+// #define D_SD_CHIP_SELECT_PIN   4
+// #include <SPI.h>
+// #include <SD.h>
+#include "SmfFileAccess.h"
+
+File s_FileHd;
+bool SmfFileAccessOpen(UCHAR *Filename) {
+  bool result = false;
+
+  if (Filename != NULL) {
+    // lcd.print(F("filename:"));
+    // lcd.setFont(&fonts::Font4);
+    // lcd.setTextSize(1);
+    // lcd.setCursor(5, 0);
+    // lcd.println((const char *)Filename);
+    s_FileHd = SD.open((const char *)Filename);
+
+    result = s_FileHd.available();
+  }
+  return (result);
+}
+
+void SmfFileAccessClose() { s_FileHd.close(); }
+bool SmfFileAccessRead(UCHAR *Buf, unsigned long Ptr) {
+  bool result = true;
+  if (Buf != NULL) {
+    if (s_FileHd.position() != Ptr) {
+      s_FileHd.seek(Ptr);
+    }
+    int data = s_FileHd.read();
+    if (data >= 0) {
+      *Buf = (UCHAR)data;
+    } else {
+      result = false;
+    }
+  }
+  return (result);
+}
+
+bool SmfFileAccessReadNext(UCHAR *Buf) {
+  bool result = true;
+  if (Buf != NULL) {
+    int data = s_FileHd.read();
+    if (data >= 0) {
+      *Buf = (UCHAR)data;
+    } else {
+      result = false;
+    }
+  }
+  return (result);
+}
+
+int SmfFileAccessReadBuf(UCHAR *Buf, unsigned long Ptr, int Lng) {
+  int result = 0;
+  if (Buf != NULL) {
+    if (s_FileHd.position() != Ptr) {
+      s_FileHd.seek(Ptr);
+    }
+
+    int i;
+    int data;
+    for (i = 0; i < Lng; i++) {
+      data = s_FileHd.read();
+      if (data >= 0) {
+        Buf[i] = (UCHAR)data;
+        result++;
+      } else {
+        break;
+      }
+    }
+  }
+  return (result);
+}
+
+unsigned int SmfFileAccessSize() {
+  unsigned int result = 0;
+  result = s_FileHd.size();
+
+  return (result);
+}
+
+//----------------------------------------------------------------------
+// #define D_PLAY_BUTTON_PIN   2  //開始/停止ボタン
+#define D_CH_OFFSET_PIN \
+  3  // チャンネル番号オフセット（eVY1のGM音源としての演奏）
+// #define D_FF_BUTTON_PIN     5  //送りボタン
+#define D_STATUS_LED 10  // 状態表示LED
+
+int playdataCnt = 0;        // 選曲番号
+#define D_PLAY_DATA_NUM 10  // SDカード格納ＳＭＦファイル数
+
+IntervalCheck sButtonCheckInterval(100, true);
+// IntervalCheck sTickProcInterval( ZTICK, true );
+IntervalCheckMicros sTickProcInterval(ZTICK * 1000, true);
+IntervalCheck sStatusLedCheckInterval(100, true);
+unsigned int sLedPattern = 0x0f0f;
+IntervalCheck sUpdateScreenInterval(500, true);
+
+char filename[14] = {'/', 'p', 'l', 'a', 'y', 'd', 'a',
+                     't', '0', '.', 'm', 'i', 'd', 0x00};
+
+// SMFファイル名生成
+//  playdat0.mid～playdat9.midの文字列を順次返す。
+char *makeFilename() {
+  int cnt = 0;
+  //  char * filename = (char*)"playdat0.mid";
+  for (cnt = 0; cnt < D_PLAY_DATA_NUM; cnt++) {
+    filename[8] = 0x30 + playdataCnt;
+    playdataCnt++;
+    if (playdataCnt >= D_PLAY_DATA_NUM) {
+      playdataCnt = 0;
+    }
+    if (SD.exists(filename) == true) {
+      break;
+    }
+  }
+  return (filename);
+}
+
+void updateScreen() {
+  static String last_filename = "";
+  static int last_status = -1;
+  static int last_chNoOffset = -1;
+
+  int status = SmfSeqGetStatus(pseqTbl);
+
+  int chNoOffset = 0;
+
+  if ((last_filename != filename) || (last_status != status) ||
+      (last_chNoOffset != chNoOffset)) {
+    // lcd.fillScreen(TFT_BLACK);
+    // lcd.setFont(&fonts::Font4);
+    // lcd.setTextSize(1);
+
+    // lcd.setCursor(5, 0);
+    // lcd.println(filename);
+    // lcd.setCursor(5, 27);
+    // lcd.print(F("Status:"));
+    switch (status) {
+      case SMF_STAT_FILENOTREAD:  // SMFファイル未読み込み（演奏不能）
+        // lcd.println(F("File load failed."));
+        break;
+      case SMF_STAT_STOP:  // 演奏停止
+        // lcd.println(F("stop."));
+        // lcd.fillRect(260, 5, 40, 40, TFT_WHITE);
+        break;
+      case SMF_STAT_PLAY:  // 演奏中
+        // lcd.println(F("playing."));
+        // lcd.fillRect(280, 5, 310, 45, TFT_BLACK);
+        // lcd.fillTriangle(280, 5, 280, 45, 310, 25, TFT_YELLOW);
+        break;
+      case SMF_STAT_PAUSE:  // 演奏一時停止中
+        // lcd.println(F("pause."));
+        break;
+      case SMF_STAT_STOPWAIT:  // 演奏停止待ち（演奏中）
+        // lcd.println(F("wait."));
+        break;
+      default:
+        break;
+    }
+
+    last_filename = filename;
+    last_status = status;
+    last_chNoOffset = chNoOffset;
+  }
+}
+
+void backscreen() {
+  // lcd.setFont(&fonts::Font0);
+  // lcd.setTextSize(1);
+  for (int chd = 1; chd <= 16; chd++) {
+    int y = 49 + chd * 10;
+    // lcd.drawNumber(chd, 4, y + 1);
+    // lcd.drawFastHLine(2, y - 1, 316, 0xF660);
+    // lcd.fillRect(18, y, 300, 9, TFT_DARKGREY);
+    // lcd.setColor(TFT_BLACK);
+    for (int oct = 0; oct < 11; ++oct) {
+      int x = 18 + oct * 28;
+      for (int n = 0; n < 7; ++n) {
+        // lcd.drawFastVLine(x + n * 4 + 3, y, 9);
+      }
+      // lcd.fillRect(x + 2, y, 3, 5);
+      // lcd.fillRect(x + 6, y, 3, 5);
+      // lcd.fillRect(x + 14, y, 3, 5);
+      // lcd.fillRect(x + 18, y, 3, 5);
+      // lcd.fillRect(x + 22, y, 3, 5);
+    }
+  }
+  // lcd.drawFastVLine(16, 58, 161, 0xF660);
+  // lcd.drawRect(1, 58, 318, 161, 0xF660);
+}
+
+void midi_setup() {
+  // M5.begin();
+  // M5.Power.begin();
+
+  // 最初に初期化関数を呼び出します。
+  // lcd.init();
+
+  // lcd.setRotation(1);
+
+  // バックライトの輝度を 0～255 の範囲で設定します。
+  // lcd.setBrightness(255);
+
+  // lcd.clear(TFT_BLACK);
+
+  // Serial.begin(115200);
+
+  // pinMode(D_CH_OFFSET_PIN, INPUT_PULLUP);
+  // pinMode(D_STATUS_LED, OUTPUT);
+
+  // lcd.println(F("Initializing SD card..."));
+
+  if (!SD.begin(4, SPI, 40000000)) {
+    DPRINTLN(F("Card failed, or not present"));
+    // don't do anything more:
+    delay(2000);
+    return;
+  }
+
+  DPRINTLN(F("card initialized."));
+  // すぐにファイルアクセスするとフォーマット破壊することがあったため待ち
+  delay(2000);
+
+  int Ret;
+  pseqTbl = SmfSeqInit(ZTICK);
+  if (pseqTbl == NULL) {
+    // lcd.println(F("SmfSeqInit failed."));
+    delay(2000);
+    return;
+  }
+
+  int chNoOffset = 0;
+
+  // SMFファイル読込
+  SmfSeqFileLoadWithChNoOffset(pseqTbl, (char *)makeFilename(), chNoOffset);
+  // 発音中全キーノートオフ
+  Ret = SmfSeqAllNoteOff(pseqTbl);
+  // トラックテーブルリセット
+  SmfSeqPlayResetTrkTbl(pseqTbl);
+}
+
 void setup() {
-  auto cfg = M5.config();     // 設定用の情報を抽出
-  cfg.output_power = true;   // Groveポートの出力をしない
-  M5.begin(cfg);              // M5Stackをcfgの設定で初期化
-#if defined( ARDUINO_M5STACK_CORES3 )
-  unifiedButton.begin(&M5.Display, goblib::UnifiedButton::appearance_t::transparent_all);
+  auto cfg = M5.config();   // 設定用の情報を抽出
+  cfg.output_power = true;  // Groveポートの出力をしない
+  M5.begin(cfg);            // M5Stackをcfgの設定で初期化
+#if defined(ARDUINO_M5STACK_CORES3)
+  unifiedButton.begin(&M5.Display,
+                      goblib::UnifiedButton::appearance_t::transparent_all);
 #endif
   M5.Log.setLogLevel(m5::log_target_display, ESP_LOG_NONE);
   M5.Log.setLogLevel(m5::log_target_serial, ESP_LOG_INFO);
   M5.Log.setEnableColor(m5::log_target_serial, false);
   M5_LOGI("Hello World");
   Serial.println("HelloWorldSerial");
-  //USBSerial.println("HelloWorldUSBSerial");
+  // USBSerial.println("HelloWorldUSBSerial");
   avatar.init();
-#if defined( CORE_PORT_A )
+#if defined(CORE_PORT_A)
   // M5Stack Fireの場合、Port.Aを使う場合は内部I2CをOffにする必要がある。
   avatar.setBatteryIcon(false);
   M5.In_I2C.release();
 #else
   avatar.setBatteryIcon(true);
 #endif
-  if (servo_x.attach(SERVO_PIN_X,
-                     START_DEGREE_VALUE_X + servo_offset_x,
+  if (servo_x.attach(SERVO_PIN_X, START_DEGREE_VALUE_X + servo_offset_x,
                      DEFAULT_MICROSECONDS_FOR_0_DEGREE,
-                     DEFAULT_MICROSECONDS_FOR_180_DEGREE))
-  {
+                     DEFAULT_MICROSECONDS_FOR_180_DEGREE)) {
     Serial.print("Error attaching servo x");
   }
-  if (servo_y.attach(SERVO_PIN_Y,
-                     START_DEGREE_VALUE_Y + servo_offset_y,
+  if (servo_y.attach(SERVO_PIN_Y, START_DEGREE_VALUE_Y + servo_offset_y,
                      DEFAULT_MICROSECONDS_FOR_0_DEGREE,
                      DEFAULT_MICROSECONDS_FOR_180_DEGREE)) {
     Serial.print("Error attaching servo y");
@@ -240,13 +523,143 @@ void setup() {
   servo_y.setEasingType(EASE_QUADRATIC_IN_OUT);
   setSpeedForAllServos(60);
   last_mouth_millis = millis();
-  //moveRandom();
-  //testServo();
+  // moveRandom();
+  // testServo();
+
+  midi_setup();
+}
+
+int prePlayButtonStatus = HIGH;
+int preFfButtonStatus = HIGH;
+void midi_loop() {
+  int Ret;
+
+  // 定期起動処理
+  if (sTickProcInterval.check() == true) {
+    if (SmfSeqGetStatus(pseqTbl) != SMF_STAT_STOP) {
+      // 状態が演奏停止中以外の場合
+      // 定期処理を実行
+      Ret = SmfSeqTickProc(pseqTbl);
+      // 処理が間に合わない場合のリカバリ
+      while (sTickProcInterval.check() == true) {
+        // 定期処理を実行
+        Ret = SmfSeqTickProc(pseqTbl);
+      }
+      if (SmfSeqGetStatus(pseqTbl) == SMF_STAT_STOP) {
+        // 状態が演奏停止中になった場合
+        // 発音中全キーノートオフ
+        Ret = SmfSeqAllNoteOff(pseqTbl);
+        // トラックテーブルリセット
+        SmfSeqPlayResetTrkTbl(pseqTbl);
+        // ファイルクローズ
+        SmfSeqEnd(pseqTbl);
+        // lcd.fillRect(280, 5, 310, 45, TFT_BLACK);
+        // lcd.setFont(&fonts::Font4);
+        // lcd.setCursor(5, 27);
+        // lcd.setTextSize(1);
+        // lcd.print(F("Status:"));
+        // lcd.println(F("SEQ end.  "));
+
+        int chNoOffset = 0;
+
+        pseqTbl = SmfSeqInit(ZTICK);
+        // SMFファイル読込
+        SmfSeqFileLoadWithChNoOffset(pseqTbl, (char *)makeFilename(),
+                                     chNoOffset);
+        // トラックテーブルリセット
+        SmfSeqPlayResetTrkTbl(pseqTbl);
+        // 演奏開始
+        SmfSeqStart(pseqTbl);
+      }
+    }
+  }
+
+  // ボタン操作処理
+  if (sButtonCheckInterval.check() == true) {
+    M5.update();
+    // スイッチ状態取得
+    int buttonPlayStatus = M5.BtnB.wasPressed();
+    if (prePlayButtonStatus != buttonPlayStatus) {
+      // スイッチ状態が変化していた場合
+      if (buttonPlayStatus == LOW) {
+        // スイッチ状態がONの場合
+        if (SmfSeqGetStatus(pseqTbl) == SMF_STAT_STOP) {
+          // 演奏開始
+          SmfSeqStart(pseqTbl);
+        } else {
+          // 演奏中なら演奏停止
+          SmfSeqStop(pseqTbl);
+          // 発音中全キーノートオフ
+          Ret = SmfSeqAllNoteOff(pseqTbl);
+        }
+      }
+    }
+    // スイッチ状態保持
+    prePlayButtonStatus = buttonPlayStatus;
+
+    int buttonFfStatus = M5.BtnC.wasPressed();
+    if (preFfButtonStatus != buttonFfStatus) {
+      // スイッチ状態が変化していた場合
+      if (preFfButtonStatus == LOW) {
+        // スイッチ状態がONの場合
+        bool playing = false;
+        if (SmfSeqGetStatus(pseqTbl) != SMF_STAT_STOP) {
+          // 演奏中なら演奏停止
+          SmfSeqStop(pseqTbl);
+          // 発音中全キーノートオフ
+          Ret = SmfSeqAllNoteOff(pseqTbl);
+          // トラックテーブルリセット
+          SmfSeqPlayResetTrkTbl(pseqTbl);
+          // ファイルクローズ
+          SmfSeqEnd(pseqTbl);
+          playing = true;
+        } else {
+          playing = false;
+        }
+
+        int chNoOffset = 0;
+
+        pseqTbl = SmfSeqInit(ZTICK);
+        // SMFファイル読込
+        SmfSeqFileLoadWithChNoOffset(pseqTbl, (char *)makeFilename(),
+                                     chNoOffset);
+        // 発音中全キーノートオフ
+        Ret = SmfSeqAllNoteOff(pseqTbl);
+        // トラックテーブルリセット
+        SmfSeqPlayResetTrkTbl(pseqTbl);
+        if (playing == true) {
+          // 演奏開始
+          SmfSeqStart(pseqTbl);
+        }
+      }
+    }
+    // スイッチ状態保持
+    preFfButtonStatus = buttonFfStatus;
+  }
+
+  // 状態表示更新
+  if (SmfSeqGetStatus(pseqTbl) != SMF_STAT_STOP) {
+    if (sStatusLedCheckInterval.check() == true) {
+      unsigned int led = sLedPattern & 0x0001;
+      if (led > 0) {
+        // digitalWrite( D_STATUS_LED, HIGH );
+      } else {
+        // digitalWrite( D_STATUS_LED, LOW );
+      }
+      sLedPattern = (sLedPattern >> 1) | (led << 15);
+    }
+  } else {
+    // digitalWrite( D_STATUS_LED, LOW );
+  }
+
+  if (sUpdateScreenInterval.check() == true) {
+    updateScreen();
+  }
 }
 
 void loop() {
 #ifdef ARDUINO_M5STACK_CORES3
-  unifiedButton.update(); // M5.update() よりも前に呼ぶ事
+  unifiedButton.update();  // M5.update() よりも前に呼ぶ事
 #endif
   M5.update();
   if (M5.BtnA.pressedFor(2000)) {
@@ -271,7 +684,7 @@ void loop() {
   }
   if (M5.BtnC.pressedFor(5000)) {
     M5_LOGI("Will copy this sketch to filesystem");
-    if (saveSketchToFS( SD, SDU_APP_PATH, TFCARD_CS_PIN )) {
+    if (saveSketchToFS(SD, SDU_APP_PATH, TFCARD_CS_PIN)) {
       M5_LOGI("Copy Successful!");
     } else {
       M5_LOGI("Copy failed!");
@@ -282,17 +695,18 @@ void loop() {
   }
 
   if ((millis() - last_mouth_millis) > mouth_wait) {
-    const char* l = lyrics[lyrics_idx++ % lyrics_size];
+    const char *l = lyrics[lyrics_idx++ % lyrics_size];
     avatar.setSpeechText(l);
     avatar.setMouthOpenRatio(0.7);
     delay(200);
     avatar.setMouthOpenRatio(0.0);
     last_mouth_millis = millis();
-#if !defined( CORE_PORT_A )
+#if !defined(CORE_PORT_A)
     avatar.setBatteryStatus(M5.Power.isCharging(), M5.Power.getBatteryLevel());
 #endif
   }
+
+  midi_loop();
   // delayを50msec程度入れないとCoreS3でバッテリーレベルと充電状態がおかしくなる。
   delay(0);
-
 }
