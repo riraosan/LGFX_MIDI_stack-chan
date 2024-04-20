@@ -7,7 +7,7 @@
 #include <SPI.h>
 #include <SD.h>
 
-extern M5GFX lcd;
+//extern M5GFX lcd;
 
 typedef unsigned char UCHAR;  //1バイト符号なしデータ（SMFファイルアクセスに使用）
 typedef unsigned long ULONG;  //4バイト符号なしデータ（SMFファイルアクセスに使用）

@@ -88,7 +88,7 @@ typedef struct {
   int                 chNoOffset;                        //CH番号オフセット
 
   int                 TrackNum;                          //格納トラック数
-    
+
   int                 TPQN;                              //4分音符の分解能
   float               TempoVal;                          //4分音符の長さ(ms)：データ上はμs
   int                 Tempo;                             //1分に入る4分音符数:60000ms/500ms=120
@@ -111,6 +111,9 @@ typedef struct {
   UCHAR               CyancType[4];
   UCHAR               Length[4];
 } TRACK_HEADER;
+
+typedef void (*CALLBACK_FUNCTION)(int note, int ch, bool press);
+void contents_run( CALLBACK_FUNCTION func_ptr );
 
 SMF_SEQ_TABLE  *SmfSeqInit( int Tick );
 void    SmfSeqClrarTbl( );
@@ -140,5 +143,6 @@ int     SmfSeqGetExData( SMF_TRACK_TABLE *ptrkTbl, UCHAR *Data, int MaxLength );
 long    SmfSeqGetNum( SMF_TRACK_TABLE *ptrkTbl );
 void    SmfSeqStrcpy( char *DistStr, char *SrcStr, int MaxSize );
 char    *SmfSeqGetFileName( char *FullPathName );
+
 
 #endif

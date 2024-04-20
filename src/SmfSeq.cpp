@@ -18,6 +18,7 @@
 SMF_SEQ_TABLE seqTbl;                 //SMFシーケンステーブル
 SMF_TRACK_TABLE trkTbl[SMF_TRACKNUM]; //SMFトラックテーブル
 
+CALLBACK_FUNCTION callbatck_function;
 //-----------------------------------------------------------------------------
 //  初期化        全テーブル初期化、状態をファイル未読み込みに移行
 //    割り込み情報
@@ -533,20 +534,6 @@ int SmfSeqTickProc(SMF_SEQ_TABLE *pseqTbl)
   return (Ret);
 }
 
-inline void drawKey(int note, int ch, bool press)
-{
-  static constexpr int note_x[] = {0, 2, 4, 6, 8, 12, 14, 16, 18, 20, 22, 24 };
-  static constexpr int note_y[] = {4, 0, 4, 0, 4,  4,  0,  4,  0,  4,  0,  4 };
-
-  int oct = note / 12;
-  int idx = note - oct * 12;
-  int dx = 18 + oct * 28 + note_x[idx];
-  int dy = 61 +  ch * 10 + note_y[idx];
-  int color = TFT_WHITE;
-  if (!press) color = note_y[idx] ? TFT_DARKGREY : TFT_BLACK;
-  //lcd.fillRect(dx, dy, 3, 2, color);
-}
-
 int SmfSeqEventProc(SMF_SEQ_TABLE *pseqTbl, SMF_TRACK_TABLE *ptrkTbl)
 {
   UCHAR ExBuff[SMF_EXBUFLNG];
@@ -703,10 +690,8 @@ int SmfSeqEventProc(SMF_SEQ_TABLE *pseqTbl, SMF_TRACK_TABLE *ptrkTbl)
           }
           MidiData1 = (int)MidiData[0];
           MidiData2 = (int)MidiData[1];
-          //lcd.startWrite();
-          drawKey(MidiData1, MidiStatus & MIDI_CHANNEL_MASK, false);
-          Ret = midiOutShortMsg((UCHAR)MidiStatus,
-                                (UCHAR)MidiData1,
+          callbatck_function(MidiData1, MidiStatus & MIDI_CHANNEL_MASK, false);
+          Ret = midiOutShortMsg((UCHAR)MidiStatus, (UCHAR)MidiData1,
                                 (UCHAR)MidiData2);
           //lcd.endWrite();
           if (Ret == MIDI_NG)
@@ -727,9 +712,8 @@ int SmfSeqEventProc(SMF_SEQ_TABLE *pseqTbl, SMF_TRACK_TABLE *ptrkTbl)
           }
           MidiData1 = (int)MidiData[0];
           MidiData2 = (int)MidiData[1];
-          //lcd.startWrite();
-          drawKey(MidiData1, MidiStatus & MIDI_CHANNEL_MASK, MidiData2);
-          //ノートオンによるノートオフ対策
+          callbatck_function(MidiData1, MidiStatus & MIDI_CHANNEL_MASK, MidiData2);
+          // ノートオンによるノートオフ対策
           if (MidiData2 == 0)
           {
             //ベロシティ0のノートオンはノートオフに書換える
@@ -1195,4 +1179,9 @@ char *SmfSeqGetFileName(char *FullPathName)
   }
 
   return (&FullPathName[Lng - Cnt]);
+}
+
+/* contesnts_run method. */
+void contents_run( CALLBACK_FUNCTION func_ptr ) {
+  callbatck_function = func_ptr;
 }

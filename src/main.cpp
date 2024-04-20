@@ -326,6 +326,23 @@ unsigned int SmfFileAccessSize() {
   return (result);
 }
 
+inline void drawKey(int note, int ch, bool press) {
+  //log_i("%d %d ", note, ch);
+
+  if (ch == 0 && press == true) {
+    avatar.setMouthOpenRatio(0.7);
+  } else if (ch == 0 && press == false) {
+    avatar.setMouthOpenRatio(0.0);
+  }
+
+  if (ch == 2 && press == true) {
+    avatar.setMouthOpenRatio(0.7);
+  } else if (ch == 2 && press == false) {
+    avatar.setMouthOpenRatio(0.0);
+  }
+
+}
+
 //----------------------------------------------------------------------
 // #define D_PLAY_BUTTON_PIN   2  //開始/停止ボタン
 #define D_CH_OFFSET_PIN \
@@ -438,26 +455,6 @@ void backscreen() {
 }
 
 void midi_setup() {
-  // M5.begin();
-  // M5.Power.begin();
-
-  // 最初に初期化関数を呼び出します。
-  // lcd.init();
-
-  // lcd.setRotation(1);
-
-  // バックライトの輝度を 0～255 の範囲で設定します。
-  // lcd.setBrightness(255);
-
-  // lcd.clear(TFT_BLACK);
-
-  // Serial.begin(115200);
-
-  // pinMode(D_CH_OFFSET_PIN, INPUT_PULLUP);
-  // pinMode(D_STATUS_LED, OUTPUT);
-
-  // lcd.println(F("Initializing SD card..."));
-
   if (!SD.begin(4, SPI, 40000000)) {
     DPRINTLN(F("Card failed, or not present"));
     // don't do anything more:
@@ -468,6 +465,9 @@ void midi_setup() {
   DPRINTLN(F("card initialized."));
   // すぐにファイルアクセスするとフォーマット破壊することがあったため待ち
   delay(2000);
+
+  // コールバック関数を登録
+  contents_run(drawKey);
 
   int Ret;
   pseqTbl = SmfSeqInit(ZTICK);
@@ -491,6 +491,9 @@ void setup() {
   auto cfg = M5.config();   // 設定用の情報を抽出
   cfg.output_power = true;  // Groveポートの出力をしない
   M5.begin(cfg);            // M5Stackをcfgの設定で初期化
+
+  midi_setup();
+
 #if defined(ARDUINO_M5STACK_CORES3)
   unifiedButton.begin(&M5.Display,
                       goblib::UnifiedButton::appearance_t::transparent_all);
@@ -505,28 +508,26 @@ void setup() {
 #if defined(CORE_PORT_A)
   // M5Stack Fireの場合、Port.Aを使う場合は内部I2CをOffにする必要がある。
   avatar.setBatteryIcon(false);
-  M5.In_I2C.release();
+  // M5.In_I2C.release();
 #else
   avatar.setBatteryIcon(true);
 #endif
-  if (servo_x.attach(SERVO_PIN_X, START_DEGREE_VALUE_X + servo_offset_x,
-                     DEFAULT_MICROSECONDS_FOR_0_DEGREE,
-                     DEFAULT_MICROSECONDS_FOR_180_DEGREE)) {
-    Serial.print("Error attaching servo x");
-  }
-  if (servo_y.attach(SERVO_PIN_Y, START_DEGREE_VALUE_Y + servo_offset_y,
-                     DEFAULT_MICROSECONDS_FOR_0_DEGREE,
-                     DEFAULT_MICROSECONDS_FOR_180_DEGREE)) {
-    Serial.print("Error attaching servo y");
-  }
-  servo_x.setEasingType(EASE_QUADRATIC_IN_OUT);
-  servo_y.setEasingType(EASE_QUADRATIC_IN_OUT);
-  setSpeedForAllServos(60);
+  // if (servo_x.attach(SERVO_PIN_X, START_DEGREE_VALUE_X + servo_offset_x,
+  //                    DEFAULT_MICROSECONDS_FOR_0_DEGREE,
+  //                    DEFAULT_MICROSECONDS_FOR_180_DEGREE)) {
+  //   Serial.print("Error attaching servo x");
+  // }
+  // if (servo_y.attach(SERVO_PIN_Y, START_DEGREE_VALUE_Y + servo_offset_y,
+  //                    DEFAULT_MICROSECONDS_FOR_0_DEGREE,
+  //                    DEFAULT_MICROSECONDS_FOR_180_DEGREE)) {
+  //   Serial.print("Error attaching servo y");
+  // }
+  // servo_x.setEasingType(EASE_QUADRATIC_IN_OUT);
+  // servo_y.setEasingType(EASE_QUADRATIC_IN_OUT);
+  // setSpeedForAllServos(60);
   last_mouth_millis = millis();
   // moveRandom();
   // testServo();
-
-  midi_setup();
 }
 
 int prePlayButtonStatus = HIGH;
@@ -694,17 +695,18 @@ void loop() {
     moveRandom();
   }
 
-  if ((millis() - last_mouth_millis) > mouth_wait) {
-    const char *l = lyrics[lyrics_idx++ % lyrics_size];
-    avatar.setSpeechText(l);
-    avatar.setMouthOpenRatio(0.7);
-    delay(200);
-    avatar.setMouthOpenRatio(0.0);
-    last_mouth_millis = millis();
-#if !defined(CORE_PORT_A)
-    avatar.setBatteryStatus(M5.Power.isCharging(), M5.Power.getBatteryLevel());
-#endif
-  }
+  //  if ((millis() - last_mouth_millis) > mouth_wait) {
+  //     const char *l = lyrics[lyrics_idx++ % lyrics_size];
+  //     avatar.setSpeechText(l);
+  //     avatar.setMouthOpenRatio(0.7);
+  //     delay(200);
+  //     avatar.setMouthOpenRatio(0.0);
+  //     last_mouth_millis = millis();
+  // #if !defined(CORE_PORT_A)
+  //     avatar.setBatteryStatus(M5.Power.isCharging(),
+  //     M5.Power.getBatteryLevel());
+  // #endif
+  //  }
 
   midi_loop();
   // delayを50msec程度入れないとCoreS3でバッテリーレベルと充電状態がおかしくなる。
