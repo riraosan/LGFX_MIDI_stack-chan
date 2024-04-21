@@ -68,6 +68,7 @@ https://github.com/meganetaaan/stack-chan
 ## author
 
 Takao Akaki
+
 modified by riraosan
 
 ## LICENSE
