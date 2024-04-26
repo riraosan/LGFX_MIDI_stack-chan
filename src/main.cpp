@@ -13,6 +13,9 @@
 
 SMF_SEQ_TABLE *pseqTbl;  // SMFシーケンサハンドル
 
+
+TaskHandle_t taskHandle;
+
 #if defined(ARDUINO_M5STACK_Core2)
 // M5Stack Core2用のサーボの設定
 // Port.A X:G33, Y:G32
@@ -163,7 +166,7 @@ void adjustOffset() {
   }
 }
 
-void moveRandom() {
+void moveRandom(void *) {
   for (;;) {
     // ランダムモード
     int x = random(45, 135);  // 45〜135° でランダム
@@ -184,6 +187,8 @@ void moveRandom() {
 #endif
     // avatar.setSpeechText("Stop BtnC");
     avatar.setSpeechText("");
+
+    delay(1);
   }
 }
 
@@ -381,81 +386,8 @@ char *makeFilename() {
   return (filename);
 }
 
-void updateScreen() {
-  static String last_filename = "";
-  static int last_status = -1;
-  static int last_chNoOffset = -1;
-
-  int status = SmfSeqGetStatus(pseqTbl);
-
-  int chNoOffset = 0;
-
-  if ((last_filename != filename) || (last_status != status) ||
-      (last_chNoOffset != chNoOffset)) {
-    // lcd.fillScreen(TFT_BLACK);
-    // lcd.setFont(&fonts::Font4);
-    // lcd.setTextSize(1);
-
-    // lcd.setCursor(5, 0);
-    // lcd.println(filename);
-    // lcd.setCursor(5, 27);
-    // lcd.print(F("Status:"));
-    switch (status) {
-      case SMF_STAT_FILENOTREAD:  // SMFファイル未読み込み（演奏不能）
-        // lcd.println(F("File load failed."));
-        break;
-      case SMF_STAT_STOP:  // 演奏停止
-        // lcd.println(F("stop."));
-        // lcd.fillRect(260, 5, 40, 40, TFT_WHITE);
-        break;
-      case SMF_STAT_PLAY:  // 演奏中
-        // lcd.println(F("playing."));
-        // lcd.fillRect(280, 5, 310, 45, TFT_BLACK);
-        // lcd.fillTriangle(280, 5, 280, 45, 310, 25, TFT_YELLOW);
-        break;
-      case SMF_STAT_PAUSE:  // 演奏一時停止中
-        // lcd.println(F("pause."));
-        break;
-      case SMF_STAT_STOPWAIT:  // 演奏停止待ち（演奏中）
-        // lcd.println(F("wait."));
-        break;
-      default:
-        break;
-    }
-
-    last_filename = filename;
-    last_status = status;
-    last_chNoOffset = chNoOffset;
-  }
-}
-
-void backscreen() {
-  // lcd.setFont(&fonts::Font0);
-  // lcd.setTextSize(1);
-  for (int chd = 1; chd <= 16; chd++) {
-    int y = 49 + chd * 10;
-    // lcd.drawNumber(chd, 4, y + 1);
-    // lcd.drawFastHLine(2, y - 1, 316, 0xF660);
-    // lcd.fillRect(18, y, 300, 9, TFT_DARKGREY);
-    // lcd.setColor(TFT_BLACK);
-    for (int oct = 0; oct < 11; ++oct) {
-      int x = 18 + oct * 28;
-      for (int n = 0; n < 7; ++n) {
-        // lcd.drawFastVLine(x + n * 4 + 3, y, 9);
-      }
-      // lcd.fillRect(x + 2, y, 3, 5);
-      // lcd.fillRect(x + 6, y, 3, 5);
-      // lcd.fillRect(x + 14, y, 3, 5);
-      // lcd.fillRect(x + 18, y, 3, 5);
-      // lcd.fillRect(x + 22, y, 3, 5);
-    }
-  }
-  // lcd.drawFastVLine(16, 58, 161, 0xF660);
-  // lcd.drawRect(1, 58, 318, 161, 0xF660);
-}
-
 void midi_setup() {
-  if (!SD.begin(4, SPI, 40000000)) {
+  if (!SD.begin(4, SPI, 80000000)) {
     DPRINTLN(F("Card failed, or not present"));
     // don't do anything more:
     delay(2000);
@@ -512,20 +444,23 @@ void setup() {
 #else
   avatar.setBatteryIcon(true);
 #endif
-  // if (servo_x.attach(SERVO_PIN_X, START_DEGREE_VALUE_X + servo_offset_x,
-  //                    DEFAULT_MICROSECONDS_FOR_0_DEGREE,
-  //                    DEFAULT_MICROSECONDS_FOR_180_DEGREE)) {
-  //   Serial.print("Error attaching servo x");
-  // }
-  // if (servo_y.attach(SERVO_PIN_Y, START_DEGREE_VALUE_Y + servo_offset_y,
-  //                    DEFAULT_MICROSECONDS_FOR_0_DEGREE,
-  //                    DEFAULT_MICROSECONDS_FOR_180_DEGREE)) {
-  //   Serial.print("Error attaching servo y");
-  // }
-  // servo_x.setEasingType(EASE_QUADRATIC_IN_OUT);
-  // servo_y.setEasingType(EASE_QUADRATIC_IN_OUT);
-  // setSpeedForAllServos(60);
+  if (servo_x.attach(SERVO_PIN_X, START_DEGREE_VALUE_X + servo_offset_x,
+                     DEFAULT_MICROSECONDS_FOR_0_DEGREE,
+                     DEFAULT_MICROSECONDS_FOR_180_DEGREE)) {
+    Serial.print("Error attaching servo x");
+  }
+  if (servo_y.attach(SERVO_PIN_Y, START_DEGREE_VALUE_Y + servo_offset_y,
+                     DEFAULT_MICROSECONDS_FOR_0_DEGREE,
+                     DEFAULT_MICROSECONDS_FOR_180_DEGREE)) {
+    Serial.print("Error attaching servo y");
+  }
+  servo_x.setEasingType(EASE_QUADRATIC_IN_OUT);
+  servo_y.setEasingType(EASE_QUADRATIC_IN_OUT);
+  setSpeedForAllServos(60);
   last_mouth_millis = millis();
+
+  xTaskCreatePinnedToCore(moveRandom, "servoTask", 4096, nullptr, 2, &taskHandle, PRO_CPU_NUM);
+
   // moveRandom();
   // testServo();
 }
@@ -653,9 +588,9 @@ void midi_loop() {
     // digitalWrite( D_STATUS_LED, LOW );
   }
 
-  if (sUpdateScreenInterval.check() == true) {
-    updateScreen();
-  }
+  // if (sUpdateScreenInterval.check() == true) {
+  //   updateScreen();
+  // }
 }
 
 void loop() {
@@ -692,21 +627,8 @@ void loop() {
     }
   } else if (M5.BtnC.wasPressed()) {
     // ランダムモードへ
-    moveRandom();
+    //moveRandom();
   }
-
-  //  if ((millis() - last_mouth_millis) > mouth_wait) {
-  //     const char *l = lyrics[lyrics_idx++ % lyrics_size];
-  //     avatar.setSpeechText(l);
-  //     avatar.setMouthOpenRatio(0.7);
-  //     delay(200);
-  //     avatar.setMouthOpenRatio(0.0);
-  //     last_mouth_millis = millis();
-  // #if !defined(CORE_PORT_A)
-  //     avatar.setBatteryStatus(M5.Power.isCharging(),
-  //     M5.Power.getBatteryLevel());
-  // #endif
-  //  }
 
   midi_loop();
   // delayを50msec程度入れないとCoreS3でバッテリーレベルと充電状態がおかしくなる。
