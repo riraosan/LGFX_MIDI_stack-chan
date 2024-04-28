@@ -13,7 +13,6 @@
 
 SMF_SEQ_TABLE *pseqTbl;  // SMFシーケンサハンドル
 
-
 TaskHandle_t taskHandle;
 
 #if defined(ARDUINO_M5STACK_Core2)
@@ -185,7 +184,6 @@ void moveRandom(void *) {
     // Basic/M5Stack Fireの場合はバッテリー情報が取得できないので表示しない
     avatar.setBatteryStatus(M5.Power.isCharging(), M5.Power.getBatteryLevel());
 #endif
-    // avatar.setSpeechText("Stop BtnC");
     avatar.setSpeechText("");
 
     delay(1);
@@ -260,11 +258,6 @@ bool SmfFileAccessOpen(UCHAR *Filename) {
   bool result = false;
 
   if (Filename != NULL) {
-    // lcd.print(F("filename:"));
-    // lcd.setFont(&fonts::Font4);
-    // lcd.setTextSize(1);
-    // lcd.setCursor(5, 0);
-    // lcd.println((const char *)Filename);
     s_FileHd = SD.open((const char *)Filename);
 
     result = s_FileHd.available();
@@ -332,7 +325,7 @@ unsigned int SmfFileAccessSize() {
 }
 
 inline void drawKey(int note, int ch, bool press) {
-  //log_i("%d %d ", note, ch);
+  // log_i("%d %d ", note, ch);
 
   if (ch == 0 && press == true) {
     avatar.setMouthOpenRatio(0.7);
@@ -345,21 +338,17 @@ inline void drawKey(int note, int ch, bool press) {
   } else if (ch == 2 && press == false) {
     avatar.setMouthOpenRatio(0.0);
   }
-
 }
 
 //----------------------------------------------------------------------
-// #define D_PLAY_BUTTON_PIN   2  //開始/停止ボタン
 #define D_CH_OFFSET_PIN \
   3  // チャンネル番号オフセット（eVY1のGM音源としての演奏）
-// #define D_FF_BUTTON_PIN     5  //送りボタン
 #define D_STATUS_LED 10  // 状態表示LED
 
 int playdataCnt = 0;        // 選曲番号
 #define D_PLAY_DATA_NUM 10  // SDカード格納ＳＭＦファイル数
 
 IntervalCheck sButtonCheckInterval(100, true);
-// IntervalCheck sTickProcInterval( ZTICK, true );
 IntervalCheckMicros sTickProcInterval(ZTICK * 1000, true);
 IntervalCheck sStatusLedCheckInterval(100, true);
 unsigned int sLedPattern = 0x0f0f;
@@ -387,7 +376,7 @@ char *makeFilename() {
 }
 
 void midi_setup() {
-  if (!SD.begin(4, SPI, 80000000)) {
+  if (!SD.begin(TFCARD_CS_PIN, SPI, 80000000)) {
     DPRINTLN(F("Card failed, or not present"));
     // don't do anything more:
     delay(2000);
@@ -404,7 +393,6 @@ void midi_setup() {
   int Ret;
   pseqTbl = SmfSeqInit(ZTICK);
   if (pseqTbl == NULL) {
-    // lcd.println(F("SmfSeqInit failed."));
     delay(2000);
     return;
   }
@@ -427,20 +415,19 @@ void setup() {
   midi_setup();
 
 #if defined(ARDUINO_M5STACK_CORES3)
-  unifiedButton.begin(&M5.Display,
-                      goblib::UnifiedButton::appearance_t::transparent_all);
+  unifiedButton.begin(
+      &M5.Display,　goblib::UnifiedButton::appearance_t::transparent_all);
 #endif
   M5.Log.setLogLevel(m5::log_target_display, ESP_LOG_NONE);
   M5.Log.setLogLevel(m5::log_target_serial, ESP_LOG_INFO);
   M5.Log.setEnableColor(m5::log_target_serial, false);
   M5_LOGI("Hello World");
   Serial.println("HelloWorldSerial");
-  // USBSerial.println("HelloWorldUSBSerial");
   avatar.init();
 #if defined(CORE_PORT_A)
   // M5Stack Fireの場合、Port.Aを使う場合は内部I2CをOffにする必要がある。
   avatar.setBatteryIcon(false);
-  // M5.In_I2C.release();
+  M5.In_I2C.release();
 #else
   avatar.setBatteryIcon(true);
 #endif
@@ -459,10 +446,8 @@ void setup() {
   setSpeedForAllServos(60);
   last_mouth_millis = millis();
 
-  xTaskCreatePinnedToCore(moveRandom, "servoTask", 4096, nullptr, 2, &taskHandle, PRO_CPU_NUM);
-
-  // moveRandom();
-  // testServo();
+  xTaskCreatePinnedToCore(moveRandom, "servoTask", 4096, nullptr, 2,
+                          &taskHandle, PRO_CPU_NUM);
 }
 
 int prePlayButtonStatus = HIGH;
@@ -489,12 +474,6 @@ void midi_loop() {
         SmfSeqPlayResetTrkTbl(pseqTbl);
         // ファイルクローズ
         SmfSeqEnd(pseqTbl);
-        // lcd.fillRect(280, 5, 310, 45, TFT_BLACK);
-        // lcd.setFont(&fonts::Font4);
-        // lcd.setCursor(5, 27);
-        // lcd.setTextSize(1);
-        // lcd.print(F("Status:"));
-        // lcd.println(F("SEQ end.  "));
 
         int chNoOffset = 0;
 
@@ -587,10 +566,6 @@ void midi_loop() {
   } else {
     // digitalWrite( D_STATUS_LED, LOW );
   }
-
-  // if (sUpdateScreenInterval.check() == true) {
-  //   updateScreen();
-  // }
 }
 
 void loop() {
@@ -627,7 +602,7 @@ void loop() {
     }
   } else if (M5.BtnC.wasPressed()) {
     // ランダムモードへ
-    //moveRandom();
+    // moveRandom();
   }
 
   midi_loop();
