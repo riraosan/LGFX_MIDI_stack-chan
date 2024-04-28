@@ -328,7 +328,7 @@ inline void drawKey(int note, int ch, bool press) {
   // log_i("%d %d ", note, ch);
 
   if (ch == 0 && press == true) {
-    avatar.setMouthOpenRatio(0.7);
+    avatar.setMouthOpenRatio(1.1);
   } else if (ch == 0 && press == false) {
     avatar.setMouthOpenRatio(0.0);
   }
